@@ -1,0 +1,8 @@
+[package]
+name = "active_rusqlite"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+rusqlite = {version="0.34.0", features=["bundled"]}
+active_base = {path="../active_base"}
