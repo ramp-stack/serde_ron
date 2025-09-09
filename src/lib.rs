@@ -1,10 +1,10 @@
 use rusqlite::{Connection, Error};
 use rusqlite::fallible_iterator::FallibleIterator;
 
-pub use active_base::{ActiveRecord, RecordType, RawRecord, RecordMut, ActiveStruct};
-use active_base::{Parent, RecordType, RawRecord, RecordMut, ActiveStruct};
+pub use active_base::*;
 
 use std::collections::{BTreeSet, BTreeMap};
+use std::path::PathBuf;
 use std::cmp::Ordering;
 
 trait OptionalExtension<T> {
@@ -22,53 +22,94 @@ impl<T> OptionalExtension<T> for Result<T, Error> {
     }
 }
 
-pub trait ActiveRusqlite {
-    fn create<T: ActiveRecord>(&self, record: &T) -> Result<(), Error>;
-    fn read<T: ActiveRecord>(&self) -> Result<Option<T>, Error>;
-    fn update<T: ActiveRecord>(&self, record: &mut T) -> Result<(), Error>;
-    fn delete<T: ActiveRecord>(&self) -> Result<(), Error>;
+ //  pub trait ActiveRusqlite {
+//      fn create<T: ActiveRecord>(&self, record: &T) -> Result<(), Error>;
+//      fn read<T: ActiveRecord>(&self) -> Result<Option<T>, Error>;
+//      fn update<T: ActiveRecord>(&self, record: &mut T) -> Result<(), Error>;
+//      fn delete<T: ActiveRecord>(&self) -> Result<(), Error>;
 
-    fn create_sub<R: ActiveRecord, T: ActiveRecord>(&self, path: &[String], record: &T) -> Result<(), Error>;
-    fn read_sub<R: ActiveRecord, T: ActiveRecord>(&self, path: &[String]) -> Result<Option<T>, Error>;
-    fn update_sub<R: ActiveRecord, T: ActiveRecord>(&self, path: &[String], record: &mut T) -> Result<(), Error>;
-    fn delete_sub<R: ActiveRecord, T: ActiveRecord>(&self, path: &[String]) -> Result<(), Error>;
+//      fn create_sub<R: ActiveRecord, T: ActiveRecord>(&self, path: &[String], record: &T) -> Result<(), Error>;
+//      fn read_sub<R: ActiveRecord, T: ActiveRecord>(&self, path: &[String]) -> Result<Option<T>, Error>;
+//      fn update_sub<R: ActiveRecord, T: ActiveRecord>(&self, path: &[String], record: &mut T) -> Result<(), Error>;
+//      fn delete_sub<R: ActiveRecord>(&self, path: &[String]) -> Result<(), Error>;
+//  }
+//
+//  impl ActiveRusqlite for Connection {
+//      fn create<T: ActiveRecord>(&self, record: &T) -> Result<(), Error> {
+//          _Location::create(self, &T::record_type(), &[T::name()], record.get_raw())
+//      }
+//      fn read<T: ActiveRecord>(&self) -> Result<Option<T>, Error>{
+//          Ok(_Location::read(self, &T::record_type(), &[T::name()])?.map(|r| T::from_raw(r)))
+//      }
+//      fn update<T: ActiveRecord>(&self, record: &mut T) -> Result<(), Error> {
+//          _Location::update(self, &T::record_type(), &[T::name()], record.get_record_mut())
+//      }
+//      fn delete<T: ActiveRecord>(&self) -> Result<(), Error> {
+//          _Location::delete(self,  &T::record_type(), &[T::name()])
+//      }
+
+//      fn create_sub<R: ActiveRecord, T: ActiveRecord>(&self, path: &[String], record: &T) -> Result<(), Error> {
+//          _Location::create(self, &R::record_type(), &[&[R::name()], path].concat(), record.get_raw())
+//      }
+//      fn read_sub<R: ActiveRecord, T: ActiveRecord>(&self, path: &[String]) -> Result<Option<T>, Error> {
+//          Ok(_Location::read(self, &R::record_type(), &[&[R::name()], path].concat())?.map(|r| T::from_raw(r)))
+//      }
+//      fn update_sub<R: ActiveRecord, T: ActiveRecord>(&self, path: &[String], record: &mut T) -> Result<(), Error> {
+//          _Location::update(self, &R::record_type(), &[&[R::name()], path].concat(), record.get_record_mut())
+//      }
+//      fn delete_sub<R: ActiveRecord>(&self, path: &[String]) -> Result<(), Error> {
+//          _Location::delete(self,  &R::record_type(), &[&[R::name()], path].concat())
+//      }
+//  }
+
+pub trait ActiveRusqlite: ActiveRecord {
+    fn create(&self, rusqlite: &Connection) -> Result<(), Error>;
+    fn read(rusqlite: &Connection) -> Result<Option<Self>, Error> where Self: Sized;
+    fn update(&mut self, rusqlite: &Connection) -> Result<(), Error>;
+    fn delete(rusqlite: &Connection) -> Result<(), Error>;
+
+    fn create_sub<T: ActiveRecord>(rusqlite: &Connection, path: &[&str], record: &T) -> Result<(), Error>;
+    fn read_sub<T: ActiveRecord>(rusqlite: &Connection, path: &[&str]) -> Result<Option<T>, Error>;
+    fn update_sub<T: ActiveRecord>(rusqlite: &Connection,  path: &[&str], record: &mut T) -> Result<(), Error>;
+    fn delete_sub(rusqlite: &Connection, path: &[&str]) -> Result<(), Error>;
 }
 
-impl ActiveRusqlite for Connection {
-    fn create<T: ActiveRecord>(&self, record: &T) -> Result<(), Error> {
-        _Location::create(self, &T::record_type(), &[T::name()], record.get_raw())
+impl<A: ActiveRecord> ActiveRusqlite for A {
+     fn create(&self, rusqlite: &Connection) -> Result<(), Error> {
+        _Location::create(rusqlite, &Self::record_type(), &[&Self::name()], self.get_raw())
+     }
+    fn read(rusqlite: &Connection) -> Result<Option<Self>, Error> {
+        Ok(_Location::read(rusqlite, &Self::record_type(), &[&Self::name()])?.map(|r| Self::from_raw(r)))
     }
-    fn read<T: ActiveRecord>(&self) -> Result<Option<T>, Error>{
-        Ok(_Location::read(self, &T::record_type(), &[T::name()])?.map(|r| T::from_raw(r)))
+    fn update(&mut self, rusqlite: &Connection) -> Result<(), Error> {
+        _Location::update(rusqlite, &Self::record_type(), &[&Self::name()], self.get_record_mut())
     }
-    fn update<T: ActiveRecord>(&self, record: &mut T) -> Result<(), Error> {
-        _Location::update(self, &T::record_type(), &[T::name()], record.get_mut())
-    }
-    fn delete<T: ActiveRecord>(&self) -> Result<(), Error> {
-        _Location::delete(self,  &T::record_type(), &[T::name()])
+    fn delete(rusqlite: &Connection) -> Result<(), Error> {
+        _Location::delete(rusqlite, &Self::record_type(), &[&Self::name()])
     }
 
-    fn create_sub<R: ActiveRecord, T: ActiveRecord>(&self, path: &[String], record: &T) -> Result<(), Error> {
-        _Location::create(self, &R::record_type(), &[&[R::name()], path].concat(), record.get_raw())
+    fn create_sub<T: ActiveRecord>(rusqlite: &Connection, path: &[&str], record: &T) -> Result<(), Error> {
+
+        _Location::create(rusqlite, &Self::record_type(), &[&[Self::name().as_str()], path].concat(), record.get_raw())
     }
-    fn read_sub<R: ActiveRecord, T: ActiveRecord>(&self, path: &[String]) -> Result<Option<T>, Error> {
-        Ok(_Location::read(self, &R::record_type(), &[&[R::name()], path].concat())?.map(|r| T::from_raw(r)))
+    fn read_sub<T: ActiveRecord>(rusqlite: &Connection, path: &[&str]) -> Result<Option<T>, Error> {
+        Ok(_Location::read(rusqlite, &Self::record_type(), &[&[Self::name().as_str()], path].concat())?.map(|r| T::from_raw(r)))
     }
-    fn update_sub<R: ActiveRecord, T: ActiveRecord>(&self, path: &[String], record: &mut T) -> Result<(), Error> {
-        _Location::update(self, &R::record_type(), &[&[R::name()], path].concat(), record.get_mut())
+    fn update_sub<T: ActiveRecord>(rusqlite: &Connection,  path: &[&str], record: &mut T) -> Result<(), Error> {
+        _Location::update(rusqlite, &Self::record_type(), &[&[Self::name().as_str()], path].concat(), record.get_record_mut())
     }
-    fn delete_sub<R: ActiveRecord, T: ActiveRecord>(&self, path: &[String]) -> Result<(), Error> {
-        _Location::delete(self,  &R::record_type(), &[&[R::name()], path].concat())
+    fn delete_sub(rusqlite: &Connection, path: &[&str]) -> Result<(), Error> {
+        _Location::delete(rusqlite, &Self::record_type(), &[&[Self::name().as_str()], path].concat())
     }
 }
 
 trait _Location {
-    fn create(&self, root: &RecordType, path: &[String], raw: RawRecord) -> Result<(), Error>;
-    fn read(&self, root: &RecordType, path: &[String]) -> Result<Option<RawRecord>, Error>;
-    fn update(&self, root: &RecordType, path: &[String], record: RecordMut<'_>) -> Result<(), Error>;
-    fn delete(&self, root: &RecordType, path: &[String]) -> Result<(), Error>;
+    fn create(&self, root: &RecordType, path: &[&str], raw: RawRecord) -> Result<(), Error>;
+    fn read(&self, root: &RecordType, path: &[&str]) -> Result<Option<RawRecord>, Error>;
+    fn update(&self, root: &RecordType, path: &[&str], record: RecordMut<'_>) -> Result<(), Error>;
+    fn delete(&self, root: &RecordType, path: &[&str]) -> Result<(), Error>;
 
-    fn create_table(&self, root: &RecordType, path: &[String]) -> Result<(), Error>;
+    fn create_table(&self, root: &RecordType, path: &[&str]) -> Result<(), Error>;
 }
 
 ///All combinations of types that are relivent to sqlite
@@ -89,6 +130,17 @@ enum SqliteType {
 }
 
 impl SqliteType {
+    fn id(&self) -> Option<&str> {
+        match self {
+            Self::MapStructSelf(Some((id, _))) => Some(id),
+            Self::MapStructSelfState(Some((id, _))) => Some(id),
+            Self::MapStateStructSelf(Some((id, _))) => Some(id),
+            Self::MapStateStructSelfState(Some((id, _))) => Some(id),
+            Self::StructSelf(_) => Some("0"),
+            Self::StructSelfState(_) => Some("0"),
+            _ => None
+        }
+    }
     fn map(&self) -> Option<&BTreeSet<String>> {
         match self {
             Self::MapStructSelf(Some((_, map))) => Some(map),
@@ -109,8 +161,11 @@ impl SqliteType {
         )
     }
 
-    fn from<'a>(root: &'a RecordType, path: &'a [String]) -> (Self, String) {
-        match root.get(path) {
+    fn from<'a>(root: &'a RecordType, path: &'a [&'a str]) -> Result<(Self, String), Error> {
+        let root_get = |path: &[&str]| root.get(path).map_err(|e| Error::InvalidPath(PathBuf::from(e)));
+        let struct_path = || path.join("_").to_string();
+        let map_path = || path.parent().join("_").to_string();
+        Ok(match root_get(path)? {
             RecordType::Map(state, map) => {
                 (match (state, &**map) {
                     (false, RecordType::Struct(Some(false), _)) => Self::MapStructSelf(None),
@@ -119,38 +174,38 @@ impl SqliteType {
                     (true, RecordType::Struct(Some(true), _)) => Self::MapStateStructSelfState(None),
                     (false, _) => Self::Map,
                     (true, _) => Self::MapState,
-                }, path.join("_"))
+                }, struct_path())
             },
             RecordType::Struct(selfstate, map) => {
-                let parent = if path.len() < 2 {None} else {match root.get(path.parent()) {
+                let parent = if path.len() < 2 {None} else {match root_get(path.parent())? {
                     RecordType::Map(state, _) => Some(state), _ => None
                 }};
                 let map = map.keys().cloned().collect::<BTreeSet<String>>();
                 match (parent, selfstate) {
                     (_, None) => (Self::Struct(map), path.join("_")),
-                    (None, Some(false)) => (Self::StructSelf(map), path.join("_")),
-                    (None, Some(true)) => (Self::StructSelfState(map), path.join("_")),
+                    (None, Some(false)) => (Self::StructSelf(map), struct_path()),
+                    (None, Some(true)) => (Self::StructSelfState(map), struct_path()),
                     (Some(true), Some(false)) => (
-                        Self::MapStateStructSelf(Some((path.last().unwrap().to_string(), map))), path.parent().join("_")
+                        Self::MapStateStructSelf(Some((path.last().unwrap().to_string(), map))), map_path() 
                     ),
                     (Some(true), Some(true)) => (
-                        Self::MapStateStructSelfState(Some((path.last().unwrap().to_string(), map))), path.parent().join("_")
+                        Self::MapStateStructSelfState(Some((path.last().unwrap().to_string(), map))), map_path() 
                     ),
                     (Some(false), Some(true)) => (
-                        Self::MapStructSelfState(Some((path.last().unwrap().to_string(), map))), path.parent().join("_")
+                        Self::MapStructSelfState(Some((path.last().unwrap().to_string(), map))), map_path() 
                     ),
                     (Some(false), Some(false)) => (
-                        Self::MapStructSelf(Some((path.last().unwrap().to_string(), map))), path.parent().join("_")
+                        Self::MapStructSelf(Some((path.last().unwrap().to_string(), map))), map_path() 
                     ),
                 }
             }
-        }
+        })
     }
 }
 
 impl _Location for Connection {
-    fn create_table(&self, root: &RecordType, path: &[String]) -> Result<(), Error> {
-        let (ty, table) = SqliteType::from(root, path);
+    fn create_table(&self, root: &RecordType, path: &[&str]) -> Result<(), Error> {
+        let (ty, table) = SqliteType::from(root, path)?;
         let cmd = match ty {
             SqliteType::Map => format!("
                 CREATE TABLE IF NOT EXISTS \"{table}\"(id TEXT NOT NULL UNIQUE)
@@ -202,9 +257,9 @@ impl _Location for Connection {
     }
 
     //name room, path messages
-    fn create(&self, root: &RecordType, path: &[String], raw: RawRecord) -> Result<(), Error>{
+    fn create(&self, root: &RecordType, path: &[&str], raw: RawRecord) -> Result<(), Error>{
         self.create_table(root, path)?;
-        let (ty, table) = SqliteType::from(root, path);
+        let (ty, table) = SqliteType::from(root, path)?;
         let map = match raw {
             RawRecord::Map(state, map) => {
                 match ty {
@@ -303,17 +358,17 @@ impl _Location for Connection {
             s => {panic!("Invalid State: {s:?}");},
         };
         for (k, v) in map {
-            _Location::create(self, root, &[path, &[k]].concat(), v)?;
+            _Location::create(self, root, &[path, &[&k]].concat(), v)?;
         }
         Ok(())
     }
 
-    fn read(&self, root: &RecordType, path: &[String]) -> Result<Option<RawRecord>, Error> {
-        let (ty, table) = SqliteType::from(root, path);
+    fn read(&self, root: &RecordType, path: &[&str]) -> Result<Option<RawRecord>, Error> {
+        let (ty, table) = SqliteType::from(root, path)?;
         Ok(Some(match ty.map() {
             Some(map) => {
                 let children = map.iter().flat_map(|k|
-                    _Location::read(self, root, &[path, &[k.to_string()]].concat()).transpose().map(|r| Ok((k.to_string(), r?)))
+                    _Location::read(self, root, &[path, &[k]].concat()).transpose().map(|r| Ok((k.to_string(), r?)))
                 ).collect::<Result<BTreeMap<String, RawRecord>, Error>>()?;
 
                 let selfstate = match ty {
@@ -358,7 +413,7 @@ impl _Location for Connection {
                 ")).optional()?.map(|mut q| Ok::<_, Error>(q.query([]).optional()?.map(|r| Ok::<_, Error>(r.map(|row|
                     row.get(0)
                 ).collect::<Vec<String>>().optional()?.map(|c| c.into_iter().flat_map(|k|
-                    _Location::read(self, root, &[path, &[k.to_string()]].concat()).transpose().map(|r| Ok((k, r?)))
+                    _Location::read(self, root, &[path, &[&k]].concat()).transpose().map(|r| Ok((k, r?)))
                 ).collect::<Result<BTreeMap<String, RawRecord>, Error>>()))))).transpose()?.flatten().transpose()?.flatten().transpose()?.unwrap_or_default();
 
                 RawRecord::Map(map_state, children)
@@ -366,9 +421,9 @@ impl _Location for Connection {
         }))
     }
 
-    fn update(&self, root: &RecordType, path: &[String], record: RecordMut<'_>) -> Result<(), Error> {
+    fn update(&self, root: &RecordType, path: &[&str], record: RecordMut<'_>) -> Result<(), Error> {
         self.create_table(root, path)?;
-        let (ty, table) = SqliteType::from(root, path);
+        let (ty, table) = SqliteType::from(root, path)?;
 
         match record {
             RecordMut::Map(map) => {
@@ -393,7 +448,7 @@ impl _Location for Connection {
 
                 for (k, o) in instructions {
                     //println!("instructions: {:?} : {:?}", k, o);
-                    let child_path = [path, &[k.to_string()]].concat();
+                    let child_path = [path, &[&k]].concat();
                     match o {
                         Ordering::Greater => {
                             if let Some(child) = map.get_children_mut().get(&k) {
@@ -408,8 +463,8 @@ impl _Location for Connection {
                         },
                         Ordering::Less => {
                             match _Location::read(self, root, &child_path)? {
-                                Some(child) => {map.insert(k, child);},
-                                None => {map.remove(k);}
+                                Some(child) => {map.active_map_insert(k, child);},
+                                None => {map.active_map_remove(k);}
                             }
                         },
                         Ordering::Equal => {
@@ -419,20 +474,27 @@ impl _Location for Connection {
                 }
             },
             RecordMut::Struct(st) => {
-                let state: Option<String> = match ty {
+                let state: Option<Option<String>> = match ty {
                     SqliteType::StructSelfState(_) => {
-                        self.query_row(&format!("
+                        Some(self.query_row(&format!("
                             SELECT state FROM \"{table}\" WHERE id = '0'
-                        "), [], |row| row.get(0)).optional()?
+                        "), [], |row| row.get(0)).optional()?)
                     },
                     SqliteType::MapStructSelfState(Some((ref id, _))) | SqliteType::MapStateStructSelfState(Some((ref id, _))) => {
-                        self.query_row(&format!("
+                        Some(self.query_row(&format!("
                             SELECT state FROM \"{table}\" WHERE id = '{id}'
-                        "), [], |row| row.get(0)).optional()?
+                        "), [], |row| row.get(0)).optional()?)
                     },
-                    _ => None
+                    ref ty => {
+                        if let Some(id) = ty.id() {
+                            self.query_row(&format!("
+                                SELECT id FROM \"{table}\" WHERE id = '{id}'
+                            "), [], |row| row.get(0)).optional()?.map(|_: Option<String>| None)
+                        } else {None}
+                    }
                 };
-                let ordering = st.state(state.as_deref());
+                let deref_state = state.as_ref().map(|s| s.as_deref());
+                let ordering = st.state(deref_state);
                 //println!("instructions: {:?} : {:?}", ty, ordering);
                 match ordering  {
                     Ordering::Greater => {
@@ -476,7 +538,8 @@ impl _Location for Connection {
                     },
                     Ordering::Equal => {},
                     Ordering::Less => {
-                        if let Some(state) = state {st.set_state(&state);}
+                        //unwrap the state because it must exists if Ordering is Less
+                        if let Some(state) = state {st.set_state(&state.unwrap());}
                         let selfs = match ty {
                             SqliteType::MapStructSelfState(Some((id, _))) | SqliteType::MapStateStructSelfState(Some((id, _))) |
                             SqliteType::MapStructSelf(Some((id, _))) | SqliteType::MapStateStructSelf(Some((id, _))) => {
@@ -496,15 +559,14 @@ impl _Location for Connection {
                 }
 
                 for (k, v) in st.get_children_mut() {
-                    //println!("children: {:?}", k);
-                    _Location::update(self, root, &[path, &[k]].concat(), v)?;
+                    _Location::update(self, root, &[path, &[&k]].concat(), v)?;
                 }
             }
         }
         Ok(())
     }
-    fn delete(&self, root: &RecordType, path: &[String]) -> Result<(), Error> {
-        let (ty, table) = SqliteType::from(root, path);
+    fn delete(&self, root: &RecordType, path: &[&str]) -> Result<(), Error> {
+        let (ty, table) = SqliteType::from(root, path)?;
 
         let children = match ty.map() {
             Some(map) => map,
@@ -518,7 +580,7 @@ impl _Location for Connection {
         };
 
         for k in children {
-            _Location::delete(self, root, &[path, &[k.to_string()]].concat())?;
+            _Location::delete(self, root, &[path, &[k]].concat())?;
         }
 
         let cmd = match ty {

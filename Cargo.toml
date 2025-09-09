@@ -2,7 +2,16 @@
 name = "active_rusqlite"
 version = "0.1.0"
 edition = "2024"
+authors = ["Caleb Couch <caleb@orange.me>"]
+description = "Active Records built on rusqlite"
+license = "BSD-3-Clause"
+repository = "https://github.com/ramp-stack/active_rusqlite"
+
 
 [dependencies]
 rusqlite = {version="0.34.0", features=["bundled"]}
-active_base = {path="../active_base"}
+active_base = "0.1.0"
+serde_json = "1.0.143"
+
+[features]
+wrappers = ["active_base/wrappers"]
